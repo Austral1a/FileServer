@@ -31,6 +31,17 @@ func (fs *FileServer) start() {
 	}
 }
 
+func (fs *FileServer) acceptConnection(ln net.Listener) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Println("accept error: ", err)
+		}
+
+		go fs.handleConnection(conn)
+	}
+}
+
 func (fs *FileServer) handleConnection(conn net.Conn) {
 	buf := new(bytes.Buffer)
 	defer conn.Close()
@@ -44,14 +55,13 @@ func (fs *FileServer) handleConnection(conn net.Conn) {
 
 		n, err := io.CopyN(buf, conn, int64(len(f.Bytes)))
 		if err != nil && err != io.EOF {
-			fmt.Println("IN COPY")
 			fmt.Println(err)
 			break
 		}
 
 		fmt.Printf("reveiced %d bytes over network\n", n)
 
-		err = fs.saveFile(f)
+		err = fs.saveFile(f, "storage")
 		if err != nil {
 			fmt.Println(err)
 			break
@@ -73,8 +83,8 @@ func (fs *FileServer) deserializeFile(conn net.Conn) (*src.File, error) {
 	return f, nil
 }
 
-func (fs *FileServer) saveFile(f *src.File) error {
-	newFile, err := os.Create("_" + f.Name + "." + f.Extension)
+func (fs *FileServer) saveFile(f *src.File, where string) error {
+	newFile, err := os.Create(where + "/" + "_" + f.Name + "." + f.Extension)
 	defer func() {
 		err := newFile.Close()
 		if err != nil {

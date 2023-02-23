@@ -1,6 +1,9 @@
 # IDE
 .idea
 
+# fs storage files
+storage
+
 # test files
 *.dmg
 
