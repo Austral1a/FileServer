@@ -27,15 +27,13 @@ func (fs *FileServer) start() {
 			fmt.Println("accept error: ", err)
 		}
 
-		go fs.readLoop(conn)
+		go fs.handleConnection(conn)
 	}
 }
 
-func (fs *FileServer) readLoop(conn net.Conn) {
+func (fs *FileServer) handleConnection(conn net.Conn) {
 	buf := new(bytes.Buffer)
 	defer conn.Close()
-
-	c := 0
 
 	for {
 		f, err := fs.deserializeFile(conn)
@@ -43,11 +41,6 @@ func (fs *FileServer) readLoop(conn net.Conn) {
 			fmt.Println("deserialization error: ", err)
 			break
 		}
-
-		fmt.Println(c, " - bytes and counter")
-
-		fmt.Println(c, " - counter")
-		fmt.Println((*f).Name, " - name")
 
 		n, err := io.CopyN(buf, conn, int64(len(f.Bytes)))
 		if err != nil && err != io.EOF {
@@ -65,8 +58,6 @@ func (fs *FileServer) readLoop(conn net.Conn) {
 		}
 
 		fmt.Printf("File has been saved to file system\n")
-		c++
-
 	}
 }
 
