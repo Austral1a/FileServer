@@ -2,24 +2,16 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/binary"
 	"encoding/gob"
 	"fmt"
+	"github.com/Austral1a/FileServer/src"
+	"github.com/Austral1a/FileServer/src/utils"
 	"io"
 	"log"
 	"net"
 	"os"
-	"regexp"
 	"time"
 )
-
-type File struct {
-	Name      string
-	Extension string
-
-	Bytes []byte
-}
 
 type FileServer struct{}
 
@@ -78,8 +70,8 @@ func (fs *FileServer) readLoop(conn net.Conn) {
 	}
 }
 
-func (fs *FileServer) deserializeFile(conn net.Conn) (*File, error) {
-	f := &File{}
+func (fs *FileServer) deserializeFile(conn net.Conn) (*src.File, error) {
+	f := &src.File{}
 
 	decoder := gob.NewDecoder(conn)
 	err := decoder.Decode(f)
@@ -90,7 +82,7 @@ func (fs *FileServer) deserializeFile(conn net.Conn) (*File, error) {
 	return f, nil
 }
 
-func (fs *FileServer) saveFile(f *File) error {
+func (fs *FileServer) saveFile(f *src.File) error {
 	newFile, err := os.Create("_" + f.Name + "." + f.Extension)
 	defer func() {
 		err := newFile.Close()
@@ -110,92 +102,13 @@ func (fs *FileServer) saveFile(f *File) error {
 	return nil
 }
 
-func getFileNameAndExt(fileName string) (name, ext string, err error) {
-	// todo: RE is not safe
-	re, err := regexp.Compile(`(?im)^(?P<Name>[^.]*)\.(?P<Ext>.*)$`)
-	if err != nil {
-		return "", "", nil
-	}
-
-	tempMap := map[string]string{}
-	subExpNames := re.SubexpNames()
-
-	for i, n := range re.FindAllStringSubmatch(fileName, -1)[0] {
-		tempMap[subExpNames[i]] = n
-	}
-
-	return tempMap["Name"], tempMap["Ext"], nil
-}
-
-func sendRealFile(filename string) {
-	conn, err := net.Dial("tcp", ":3000")
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	file, err := os.Open(filename)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	f, err := io.ReadAll(file)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-
-	name, ext, err := getFileNameAndExt(file.Name())
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	err = encoder.Encode(File{
-		Name:      name,
-		Extension: ext,
-
-		Bytes: f,
-	})
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	_, err = conn.Write(buf.Bytes())
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
-func sendFile(size int) error {
-	file := make([]byte, (1024*1000)*500)
-	_, err := io.ReadFull(rand.Reader, file)
-	if err != nil {
-		return err
-	}
-
-	conn, err := net.Dial("tcp", ":3000")
-	if err != nil {
-		return err
-	}
-
-	binary.Write(conn, binary.LittleEndian, int64(size))
-	n, err := io.CopyN(conn, bytes.NewReader(file), int64(size))
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Written %d bytes over network\n", n)
-	return nil
-}
-
 func main() {
 
 	go func() {
 		time.Sleep(time.Millisecond * 300)
-		sendRealFile("googlechrome.dmg")
-		sendRealFile("vlc.dmg")
-		sendRealFile("vlc.dmg")
+		utils.SendRealFile("googlechrome.dmg")
+		utils.SendRealFile("vlc.dmg")
+		utils.SendRealFile("vlc.dmg")
 	}()
 	server := &FileServer{}
 	server.start()
