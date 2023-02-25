@@ -1,24 +1,38 @@
-package core
+package dataServer
 
 import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
 	"github.com/Austral1a/FileServer/src"
+	"github.com/Austral1a/FileServer/src/command"
 	"io"
 	"log"
 	"net"
 	"os"
+	"strings"
 )
 
-type FileServer struct{}
+type DataServer struct {
+	ftpClientAddr net.Addr
+	// TODO: Change to net.Addr ?
+	controlServerAddr string
+}
 
-func (fs *FileServer) Start() {
-	ln, err := net.Listen("tcp", ":3000")
+func NewDataServer() *DataServer {
+	return &DataServer{controlServerAddr: ":2121"}
+}
+
+func (fs *DataServer) Start() {
+	ln, err := net.Listen("tcp", ":20")
 	if err != nil {
 		fmt.Println(err)
 	}
 
+	fs.acceptConnection(ln)
+}
+
+func (fs *DataServer) acceptConnection(ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -29,18 +43,7 @@ func (fs *FileServer) Start() {
 	}
 }
 
-func (fs *FileServer) acceptConnection(ln net.Listener) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("accept error: ", err)
-		}
-
-		go fs.handleConnection(conn)
-	}
-}
-
-func (fs *FileServer) handleConnection(conn net.Conn) {
+func (fs *DataServer) handleConnection(conn net.Conn) {
 	buf := new(bytes.Buffer)
 	defer conn.Close()
 
@@ -69,7 +72,7 @@ func (fs *FileServer) handleConnection(conn net.Conn) {
 	}
 }
 
-func (fs *FileServer) deserializeFile(conn net.Conn) (*src.File, error) {
+func (fs *DataServer) deserializeFile(conn net.Conn) (*src.File, error) {
 	f := &src.File{}
 
 	decoder := gob.NewDecoder(conn)
@@ -81,7 +84,7 @@ func (fs *FileServer) deserializeFile(conn net.Conn) (*src.File, error) {
 	return f, nil
 }
 
-func (fs *FileServer) saveFile(f *src.File, where string) error {
+func (fs *DataServer) saveFile(f *src.File, where string) error {
 	newFile, err := os.Create(where + "/" + "_" + f.Name + "." + f.Extension)
 	defer func() {
 		err := newFile.Close()
@@ -100,3 +103,23 @@ func (fs *FileServer) saveFile(f *src.File, where string) error {
 
 	return nil
 }
+
+func (fs *DataServer) handleCommand(msg string, conn net.Conn) error {
+	slicedCommand := strings.Split(msg, " ") // command example: "USER Anonymous"
+	cmd := strings.TrimSpace(slicedCommand[0])
+
+	switch cmd {
+	case command.LIST:
+
+	}
+}
+
+// ftp passive mode connection
+/*
+func (fs *DataServer) newFTPClientAddr(newAddr net.Addr) {
+	fs.ftpClientAddr = newAddr
+}
+
+func (fs *DataServer) connectToFTPClient() {
+
+}*/

@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/Austral1a/FileServer/src"
+	"github.com/mbndr/figlet4go"
 	"io"
 	"net"
 	"os"
@@ -31,7 +32,7 @@ func GetFileNameAndExt(fileName string) (name, ext string, err error) {
 }
 
 func SendRealFile(filename string) {
-	conn, err := net.Dial("tcp", ":3000")
+	conn, err := net.Dial("tcp", ":20")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -90,4 +91,20 @@ func SendFile(size int) error {
 
 	fmt.Printf("Written %d bytes over network\n", n)
 	return nil
+}
+
+func HelloMsgAfterLogin() string {
+	ascii := figlet4go.NewAsciiRender()
+
+	options := figlet4go.NewRenderOptions()
+	options.FontColor = []figlet4go.Color{
+		figlet4go.ColorGreen,
+		figlet4go.ColorYellow,
+		figlet4go.ColorCyan,
+	}
+	options.FontName = "larry3d"
+
+	renderStr, _ := ascii.RenderOpts("Hello fella", options)
+	return renderStr
+
 }
