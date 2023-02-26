@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/Austral1a/FileServer/src/command"
 	"net"
 	"strings"
 )
 
 var ErrCommandUSERWrongSyntax = errors.New(`'USER' command has wrong syntax`)
 
-func DoCommandUSER(conn net.Conn, command string) error {
-	userName := strings.TrimSpace(strings.Split(command, CommandUSER)[1])
+func DoCommandUSER(conn net.Conn, cmd string) error {
+	userName := strings.TrimSpace(strings.Split(cmd, command.CWD)[1])
 	if userName == "" {
 		return ErrCommandUSERWrongSyntax
 	}
@@ -137,22 +138,12 @@ How to imlp communication between ds and cs ?
 */
 
 func DoCommandLIST(conn net.Conn, cs *ControlServer, flags string) error {
-	conn, err := net.Dial("tcp", cs.dataServerAddr)
+	_, err := cs.dataServerConn.Write([]byte(fmt.Sprintf("%s %s", command.LIST, flags)))
 	if err != nil {
-		// TODO: need to send proper code to FTP client
-		fmt.Println("dial to data server error: ", err)
+		return err
 	}
 
-	conn.Write([]byte(CommandLIST + " " + flags))
-
-	resp := bytes.Buffer{}
-	resp.WriteString("150 Files status ok; about to open data connection.\n")
-
-	for _, entry := range dirEntry {
-		resp.WriteString(entry.Name() + "\n")
-	}
-
-	_, err = conn.Write(resp.Bytes())
+	_, err = conn.Write([]byte("150 Data ftpserver ok; about to open data connection.\n"))
 	if err != nil {
 		return err
 	}

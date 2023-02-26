@@ -20,15 +20,22 @@ type Client struct {
 }
 
 type ControlServer struct {
-	// TODO: change to net.Addr ?
-	dataServerAddr string
-	clients        map[net.Addr]*Client
+	DataServerConn net.Conn
+	Clients        map[net.Addr]*Client
 	// current working directory of Server
-	workingDir string
+	WorkingDir string
 }
 
 func NewControlServer() *ControlServer {
-	return &ControlServer{clients: make(map[net.Addr]*Client), workingDir: FileStorageLocalPath}
+	cs := &ControlServer{clients: make(map[net.Addr]*Client), workingDir: FileStorageLocalPath}
+	err := cs.dialToDataServer()
+
+	if err != nil {
+		fmt.Println("dial to ds error: ", err)
+		os.Exit(1)
+	}
+
+	return cs
 }
 
 func (cs *ControlServer) Start() {
@@ -89,6 +96,7 @@ func (cs *ControlServer) handleConnection(conn net.Conn) {
 	}
 }
 
+// TODO: imlp client disconnection func
 func (cs *ControlServer) isClientConnected(addr net.Addr) bool {
 	_, ok := cs.clients[addr]
 
@@ -127,6 +135,18 @@ func (cs *ControlServer) changeDataTransferType(clientAddr net.Addr, newTransfer
 	return nil
 }
 
+// TODO: add ds port from env
+func (cs *ControlServer) dialToDataServer() error {
+	conn, err := net.Dial("tcp", ":20")
+	if err != nil {
+		return err
+	}
+
+	cs.dataServerConn = conn
+
+	return nil
+}
+
 /*
 to properly implement command there should be file storages type
 possible imlp to File Storages is Factory Pattern
@@ -136,7 +156,7 @@ possible imlp to File Storages is Factory Pattern
 Temporary there'll be 1 option
 */
 func (cs *ControlServer) handleCommand(msg string, conn net.Conn) error {
-	slicedCommand := strings.Split(msg, " ") // command example: "USER Anonymous"
+	slicedCommand := strings.Split(msg, " ") // msg example: "USER Anonymous"
 	cmd := strings.TrimSpace(slicedCommand[0])
 
 	switch cmd {

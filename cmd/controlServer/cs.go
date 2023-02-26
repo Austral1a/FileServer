@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/Austral1a/FileServer/src/core/controlServer"
+	"github.com/Austral1a/FileServer/src/controlServer"
 )
 
 func main() {

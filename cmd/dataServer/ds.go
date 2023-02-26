@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/Austral1a/FileServer/src/core/dataServer"
+	"github.com/Austral1a/FileServer/src/dataServer"
 	"github.com/Austral1a/FileServer/src/utils"
 	"time"
 )

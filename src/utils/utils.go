@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
-	"github.com/Austral1a/FileServer/src"
 	"github.com/mbndr/figlet4go"
 	"io"
 	"net"
