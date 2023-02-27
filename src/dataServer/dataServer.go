@@ -4,28 +4,41 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"github.com/Austral1a/FileServer/src/command"
+	"github.com/Austral1a/FileServer/src/types"
 	"io"
 	"log"
 	"net"
 	"os"
-	"strings"
 )
 
 type DataServer struct {
+	ln net.Listener
 }
 
-func NewDataServer() *DataServer {
+func (ds *DataServer) NewDataServer() *DataServer {
 	return &DataServer{}
 }
 
-func (ds *DataServer) Start() {
+func (ds *DataServer) Start() error {
 	ln, err := net.Listen("tcp", ":20")
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 
-	ds.acceptConnection(ln)
+	ds.ln = ln
+
+	go ds.acceptConnection(ln)
+
+	return nil
+}
+
+func (ds *DataServer) Close() error {
+	err := ds.ln.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (ds *DataServer) acceptConnection(ln net.Listener) {
@@ -40,17 +53,22 @@ func (ds *DataServer) acceptConnection(ln net.Listener) {
 }
 
 func (ds *DataServer) handleConnection(conn net.Conn) {
-	buf := new(bytes.Buffer)
+	buf := bytes.Buffer{}
+	var b []byte
 	defer conn.Close()
 
 	for {
+		conn.Read(b)
+
+		fmt.Println("HANDLE CONN ", b)
+
 		f, err := ds.deserializeFile(conn)
 		if err != nil {
 			fmt.Println("deserialization error: ", err)
 			break
 		}
 
-		n, err := io.CopyN(buf, conn, int64(len(f.Bytes)))
+		n, err := io.CopyN(&buf, conn, int64(len(f.Bytes)))
 		if err != nil && err != io.EOF {
 			fmt.Println(err)
 			break
@@ -68,8 +86,22 @@ func (ds *DataServer) handleConnection(conn net.Conn) {
 	}
 }
 
-func (ds *DataServer) deserializeFile(conn net.Conn) (*src.File, error) {
-	f := &src.File{}
+func (ds *DataServer) SendDataToFTPClient(conn net.Conn, info []byte) error {
+	ftpClientConn, err := net.Dial("tcp", conn.RemoteAddr().String())
+	if err != nil {
+		return err
+	}
+
+	_, err = ftpClientConn.Write(info)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ds *DataServer) deserializeFile(conn net.Conn) (*types.File, error) {
+	f := &types.File{}
 
 	decoder := gob.NewDecoder(conn)
 	err := decoder.Decode(f)
@@ -80,7 +112,7 @@ func (ds *DataServer) deserializeFile(conn net.Conn) (*src.File, error) {
 	return f, nil
 }
 
-func (ds *DataServer) saveFile(f *src.File, where string) error {
+func (ds *DataServer) saveFile(f *types.File, where string) error {
 	newFile, err := os.Create(where + "/" + "_" + f.Name + "." + f.Extension)
 	defer func() {
 		err := newFile.Close()
@@ -100,35 +132,17 @@ func (ds *DataServer) saveFile(f *src.File, where string) error {
 	return nil
 }
 
-// TODO: add from env CS Port
-func (ds *DataServer) dialToControlServer() error {
-	conn, err := net.Dial("tcp", ":2121")
+func (ds *DataServer) GetFilesAndDirs() (bytes.Buffer, error) {
+	dir, err := os.ReadDir("storage")
 	if err != nil {
-		return err
+		return bytes.Buffer{}, err
 	}
 
-	ds.controlServerConn = conn
+	filesList := bytes.Buffer{}
 
-	return nil
-}
-
-// TODO: Add command handler
-func (ds *DataServer) handleCommand(msg string, conn net.Conn) error {
-	slicedCommand := strings.Split(msg, " ") // msg example: "USER Anonymous"
-	cmd := strings.TrimSpace(slicedCommand[0])
-
-	switch cmd {
-	case command.LIST:
-
+	for _, entry := range dir {
+		filesList.WriteString(entry.Name() + "\n")
 	}
+
+	return filesList, nil
 }
-
-// ftpserver passive mode connection
-/*
-func (fs *DataServer) newFTPClientAddr(newAddr net.Addr) {
-	fs.ftpClientAddr = newAddr
-}
-
-func (fs *DataServer) connectToFTPClient() {
-
-}*/

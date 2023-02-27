@@ -1,22 +1,12 @@
-package controlServer
+package ftpserver
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"github.com/Austral1a/FileServer/src/command"
 	"net"
-	"strings"
 )
 
-var ErrCommandUSERWrongSyntax = errors.New(`'USER' command has wrong syntax`)
-
-func DoCommandUSER(conn net.Conn, cmd string) error {
-	userName := strings.TrimSpace(strings.Split(cmd, command.CWD)[1])
-	if userName == "" {
-		return ErrCommandUSERWrongSyntax
-	}
-
+func DoCommandUSER(conn net.Conn, userName string) error {
 	// "anonymous" user handler
 	if userName == "anonymous" {
 		n, err := conn.Write([]byte("230 Anonymous login ok\n"))
@@ -61,8 +51,13 @@ func DoCommandOPTS(conn net.Conn) error {
 	return nil
 }
 
-func DoCommandQUIT(conn net.Conn) error {
-	_, err := conn.Write([]byte("221 Bye!\n"))
+func DoCommandQUIT(conn net.Conn, s *FTPServer) error {
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 221, "Bye")
+	if err != nil {
+		return err
+	}
+
+	err = s.Cs.DisconnectClient(conn.RemoteAddr())
 	if err != nil {
 		return err
 	}
@@ -87,8 +82,8 @@ func DoCommandFEAT(conn net.Conn) error {
 	return nil
 }
 
-func DoCommandCWD(conn net.Conn, cs *ControlServer, newWorkingDir string) error {
-	cs.changeWorkingDir(newWorkingDir)
+func DoCommandCWD(conn net.Conn, s *FTPServer, newWorkingDir string) error {
+	s.Cs.ChangeWorkingDir(newWorkingDir)
 
 	_, err := conn.Write([]byte("250 Working dir has been changed\n"))
 	if err != nil {
@@ -98,8 +93,13 @@ func DoCommandCWD(conn net.Conn, cs *ControlServer, newWorkingDir string) error 
 	return nil
 }
 
-func DoCommandEPSV(conn net.Conn) error {
-	_, err := conn.Write([]byte("229 Entering Extended Passive Mode (|||20|)\n"))
+func DoCommandEPSV(conn net.Conn, s *FTPServer) error {
+	err := s.Ds.Start()
+	if err != nil {
+		return err
+	}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 229, "Entering Extended Passive Mode (|||20|).")
 	if err != nil {
 		return err
 	}
@@ -108,9 +108,8 @@ func DoCommandEPSV(conn net.Conn) error {
 }
 
 // TODO: need a enum/union to A or I types
-
-func DoCommandTYPE(conn net.Conn, cs *ControlServer, newDataTransferType string) error {
-	err := cs.changeDataTransferType(conn.RemoteAddr(), newDataTransferType)
+func DoCommandTYPE(conn net.Conn, s *FTPServer, newDataTransferType string) error {
+	err := s.Cs.ChangeDataTransferType(conn.RemoteAddr(), newDataTransferType)
 	if err != nil {
 		fmt.Println("change data transfer type error: ", err)
 	}
@@ -137,13 +136,31 @@ How to imlp communication between ds and cs ?
 		1) e.g. getting LIST command, leverage DS directly from CS to send needed data
 */
 
-func DoCommandLIST(conn net.Conn, cs *ControlServer, flags string) error {
-	_, err := cs.dataServerConn.Write([]byte(fmt.Sprintf("%s %s", command.LIST, flags)))
+func DoCommandLIST(conn net.Conn, s *FTPServer, flags string) error {
+	// TODO: refactor, Start and Close data server works for passive mode but not for active
+	//err := s.Ds.Start()
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//defer s.Ds.Close()
+
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data Server ok; about to open data connection.")
 	if err != nil {
 		return err
 	}
 
-	_, err = conn.Write([]byte("150 Data ftpserver ok; about to open data connection.\n"))
+	_, err = s.Ds.GetFilesAndDirs()
+	if err != nil {
+		return err
+	}
+
+	//err = s.Ds.SendDataToFTPClient(conn, list.Bytes())
+	//if err != nil {
+	//	return err
+	//}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 226, "Files sent, OK.")
 	if err != nil {
 		return err
 	}

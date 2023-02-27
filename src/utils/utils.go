@@ -6,11 +6,13 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
+	"github.com/Austral1a/FileServer/src/types"
 	"github.com/mbndr/figlet4go"
 	"io"
 	"net"
 	"os"
 	"regexp"
+	"strings"
 )
 
 func GetFileNameAndExt(fileName string) (name, ext string, err error) {
@@ -54,7 +56,7 @@ func SendRealFile(filename string) {
 		fmt.Println(err)
 	}
 
-	err = encoder.Encode(src.File{
+	err = encoder.Encode(types.File{
 		Name:      name,
 		Extension: ext,
 
@@ -106,4 +108,8 @@ func HelloMsgAfterLogin() string {
 	renderStr, _ := ascii.RenderOpts("Hello fella", options)
 	return renderStr
 
+}
+
+func GetIpFromAddress(addr string) string {
+	return strings.Split(addr, ":")[0]
 }
