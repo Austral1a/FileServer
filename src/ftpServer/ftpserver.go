@@ -5,6 +5,8 @@ import (
 	"github.com/Austral1a/FileServer/src/command"
 	"github.com/Austral1a/FileServer/src/commandServer"
 	"github.com/Austral1a/FileServer/src/dataServer"
+	"github.com/Austral1a/FileServer/src/types"
+	"github.com/Austral1a/FileServer/src/utils"
 	"net"
 	"strings"
 )
@@ -21,6 +23,7 @@ func (ftp *FTPServer) NewFTPServer() *FTPServer {
 	cs.Start()
 
 	ds := ftp.Ds.NewDataServer()
+	ds.Start()
 
 	return &FTPServer{Cs: cs, Ds: ds}
 }
@@ -31,12 +34,15 @@ func (ftp *FTPServer) HandleCommands() {
 			continue
 		}
 
-		fmt.Println(len(ftp.Cs.Clients), " CLIENTE LENTH")
-
 		for _, client := range ftp.Cs.Clients {
 			select {
 			case cmd := <-client.CommandsQueueCh:
-				fmt.Println(client.Conn.RemoteAddr().String(), " clients conn")
+				cmdItself, _ := ftp.sliceUpCommand(cmd)
+
+				connType := ftp.defineConnTypeByCommand(cmdItself)
+
+				client.ConnType = connType
+
 				err := ftp.handleCommand(client.Conn, cmd)
 				if err != nil {
 					fmt.Printf("can't handle command: %s; from client: %s; err: %s\n", strings.TrimSpace(cmd), client.Conn.RemoteAddr().String(), err)
@@ -55,15 +61,12 @@ possible imlp to File Storages is Factory Pattern
 Temporary there'll be 1 option
 */
 func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
-	slicedCommand := strings.Split(msg, " ") // msg example: "USER Anonymous"
-	cmd := strings.TrimSpace(slicedCommand[0])
+	cmd, args := ftp.sliceUpCommand(msg)
 
 	switch cmd {
 
 	case command.USER:
-		userName := strings.TrimSpace(slicedCommand[1])
-
-		return DoCommandUSER(conn, userName)
+		return DoCommandUSER(conn, args)
 
 	case command.PWD:
 		return DoCommandPWD(conn)
@@ -78,22 +81,22 @@ func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
 		return DoCommandFEAT(conn)
 
 	case command.CWD:
-		newWorkingDir := slicedCommand[1]
-
-		return DoCommandCWD(conn, ftp, newWorkingDir)
+		return DoCommandCWD(conn, ftp, args)
 
 	case command.EPSV:
 		return DoCommandEPSV(conn, ftp)
 
-	case command.TYPE:
-		newDataTransferType := slicedCommand[1]
+	case command.EPRT:
+		return DoCommandEPSV(conn, ftp)
 
-		return DoCommandTYPE(conn, ftp, newDataTransferType)
+	case command.TYPE:
+		return DoCommandTYPE(conn, ftp, args)
 
 	case command.LIST:
-		flags := slicedCommand[1]
+		return DoCommandLIST(conn, ftp, args)
 
-		return DoCommandLIST(conn, ftp, flags)
+	case command.MLSD:
+		return DoCommandMLSD(conn, ftp)
 
 	case command.QUIT:
 		return DoCommandQUIT(conn, ftp)
@@ -101,4 +104,54 @@ func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
 	default:
 		return nil
 	}
+}
+
+// defineConnTypeByCommand expects commands: LIST, USER, PORT and so on...; without args;
+func (ftp *FTPServer) defineConnTypeByCommand(cmd string) types.ConnectionType {
+	for _, actCommand := range command.CommandsEnablingActiveConnType {
+		if actCommand == cmd {
+			return "active"
+		}
+	}
+
+	for _, pasvCommand := range command.CommandsEnablingPassiveConnType {
+		if pasvCommand == cmd {
+			return "passive"
+		}
+	}
+
+	return ""
+}
+
+// SliceUpCommand slices up a command; example of command: "LIST -a" where LIST is cmdItself, -a is args
+func (ftp *FTPServer) sliceUpCommand(command string) (cmdItself string, args string) {
+	slicedCommand := strings.Split(command, " ") // msg example: "USER Anonymous"
+
+	cmdItself = strings.TrimSpace(slicedCommand[0])
+
+	if len(slicedCommand) > 1 {
+		args = strings.TrimSpace(slicedCommand[1])
+	}
+
+	return
+}
+
+func (ftp *FTPServer) defineConnTypeByClient(conn net.Conn) types.ConnectionType {
+	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
+
+	// check if this client ip is in passive ds
+	_, ok := ftp.Ds.Pds.Clients[ip]
+	if ok {
+		return "passive"
+	}
+
+	// check if this client ip is in active ds
+	for _, adsClient := range ftp.Ds.Ads {
+		// just check if addr are the same if yes then its active conn type
+		if conn.RemoteAddr() == adsClient.Client.Conn.RemoteAddr() {
+			return "active"
+		}
+	}
+
+	return ""
 }

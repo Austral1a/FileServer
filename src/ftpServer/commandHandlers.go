@@ -3,6 +3,7 @@ package ftpserver
 import (
 	"bytes"
 	"fmt"
+	"github.com/Austral1a/FileServer/src/utils"
 	"net"
 )
 
@@ -23,7 +24,7 @@ func DoCommandUSER(conn net.Conn, userName string) error {
 }
 
 func DoCommandPWD(conn net.Conn) error {
-	_, err := conn.Write([]byte(fmt.Sprintf("257 \"%s\" %v", FileStorageLocalPath, "\n")))
+	_, err := conn.Write([]byte(fmt.Sprintf("257 \"%s\" %v", "", "\n")))
 	if err != nil {
 		return err
 	}
@@ -94,12 +95,7 @@ func DoCommandCWD(conn net.Conn, s *FTPServer, newWorkingDir string) error {
 }
 
 func DoCommandEPSV(conn net.Conn, s *FTPServer) error {
-	err := s.Ds.Start()
-	if err != nil {
-		return err
-	}
-
-	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 229, "Entering Extended Passive Mode (|||20|).")
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 229, "Entering Extended Passive Mode (|||20|).")
 	if err != nil {
 		return err
 	}
@@ -122,45 +118,91 @@ func DoCommandTYPE(conn net.Conn, s *FTPServer, newDataTransferType string) erro
 	return nil
 }
 
-/*
-How to imlp communication between ds and cs ?
-	ds <-> cs bidirectional communication
-	steps:
-		1) dial to DS
-		2) send to DS command (e.g. LIST); ds.Write("LIST")
-		3) DS process commands the same way as CS does, but on "data" level; filesList -> FTP client
-		4) DS send status of command either error or not.; status -> CS
-
-	ds and cs its one program
-	steps:
-		1) e.g. getting LIST command, leverage DS directly from CS to send needed data
-*/
-
 func DoCommandLIST(conn net.Conn, s *FTPServer, flags string) error {
-	// TODO: refactor, Start and Close data server works for passive mode but not for active
-	//err := s.Ds.Start()
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//defer s.Ds.Close()
-
-	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data Server ok; about to open data connection.")
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data connection already open; transfer starting.")
 	if err != nil {
 		return err
 	}
 
-	_, err = s.Ds.GetFilesAndDirs()
+	list, err := s.Ds.GetFilesAndDirsListByLISTFormat()
 	if err != nil {
 		return err
 	}
 
-	//err = s.Ds.SendDataToFTPClient(conn, list.Bytes())
-	//if err != nil {
-	//	return err
-	//}
+	fmt.Println(list.String())
 
-	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 226, "Files sent, OK.")
+	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
+
+	connType := s.defineConnTypeByClient(conn)
+	switch connType {
+	case "passive":
+		fmt.Println(connType, " Conn type ")
+
+		err = s.Ds.SendDataToFTPClient(s.Ds.Pds.Clients[ip], list.Bytes())
+		if err != nil {
+			return err
+		}
+
+	case "active":
+		for _, adsClient := range s.Ds.Ads {
+			adsClientIp, _ := utils.GetIpAndPortFromAddr(adsClient.Client.Conn.RemoteAddr())
+
+			if ip == adsClientIp {
+				err = s.Ds.SendDataToFTPClient(adsClient.Client, list.Bytes())
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 226, "Requested file action okay, completed.")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// TODO: Simplify everything!!!. just use switch case when need to understand where should be used Passive or Active Server!!!!
+func DoCommandMLSD(conn net.Conn, s *FTPServer) error {
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data connection already open; transfer starting.")
+	if err != nil {
+		return err
+	}
+
+	files, err := s.Ds.GetFilesAndDirsByMLSDFormat()
+	if err != nil {
+		return err
+	}
+
+	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
+
+	fmt.Println(files.String(), " - MLSD")
+	// TODO: add ClientAddr type as key instead of net.Addr for CS as well
+
+	connType := s.defineConnTypeByClient(conn)
+	switch connType {
+	case "passive":
+		err = s.Ds.SendDataToFTPClient(s.Ds.Pds.Clients[ip], files.Bytes())
+		if err != nil {
+			return err
+		}
+
+	case "active":
+		for _, adsClient := range s.Ds.Ads {
+			adsClientIp, _ := utils.GetIpAndPortFromAddr(adsClient.Client.Conn.RemoteAddr())
+
+			if ip == adsClientIp {
+				err = s.Ds.SendDataToFTPClient(adsClient.Client, files.Bytes())
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Requested file action okay, completed.")
 	if err != nil {
 		return err
 	}

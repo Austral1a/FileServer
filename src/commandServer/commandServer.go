@@ -3,6 +3,7 @@ package commandServer
 import (
 	"errors"
 	"fmt"
+	"github.com/Austral1a/FileServer/src/types"
 	"io"
 	"net"
 	"os"
@@ -11,22 +12,23 @@ import (
 
 const FileStorageLocalPath = "storage"
 
-type FTPClient struct {
+type CsFTPClient struct {
 	// A (ASCII) or I (image/binary)
 	DataTransferType string
 	Conn             net.Conn
+	ConnType         types.ConnectionType
 	CommandsQueueCh  chan string
 }
 
 type CommandServer struct {
-	Clients map[net.Addr]*FTPClient
+	Clients map[net.Addr]*CsFTPClient
 	// current working directory of Server
 	WorkingDir string
 	IsStarted  bool
 }
 
 func (cs *CommandServer) NewCommandServer() *CommandServer {
-	return &CommandServer{Clients: make(map[net.Addr]*FTPClient), WorkingDir: FileStorageLocalPath}
+	return &CommandServer{Clients: make(map[net.Addr]*CsFTPClient), WorkingDir: FileStorageLocalPath}
 }
 
 func (cs *CommandServer) Start() {
@@ -104,20 +106,6 @@ func (cs *CommandServer) isClientConnected(addr net.Addr) bool {
 	return ok
 }
 
-func (cs *CommandServer) SendMsgToFTPClient(clientAddr net.Addr, code int, msg string) error {
-	client, ok := cs.Clients[clientAddr]
-	if !ok {
-		return errors.New("client is not found")
-	}
-
-	_, err := client.Conn.Write([]byte(fmt.Sprintf("%d %s\n", code, msg)))
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (cs *CommandServer) clientConnected(conn net.Conn) error {
 	if cs.isClientConnected(conn.RemoteAddr()) {
 		return errors.New(fmt.Sprintf("client %d already connected", conn.RemoteAddr()))
@@ -128,7 +116,21 @@ func (cs *CommandServer) clientConnected(conn net.Conn) error {
 		return err
 	}
 
-	cs.Clients[conn.RemoteAddr()] = &FTPClient{Conn: conn, CommandsQueueCh: make(chan string, 1)}
+	cs.Clients[conn.RemoteAddr()] = &CsFTPClient{Conn: conn, CommandsQueueCh: make(chan string, 1)}
+
+	return nil
+}
+
+func (cs *CommandServer) SendMsgToFTPClient(clientAddr net.Addr, code int, msg string) error {
+	client, ok := cs.Clients[clientAddr]
+	if !ok {
+		return errors.New("client is not found")
+	}
+
+	_, err := client.Conn.Write([]byte(fmt.Sprintf("%d %s\n", code, msg)))
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

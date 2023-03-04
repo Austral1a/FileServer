@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"strings"
 )
 
 func GetFileNameAndExt(fileName string) (name, ext string, err error) {
@@ -110,6 +109,13 @@ func HelloMsgAfterLogin() string {
 
 }
 
-func GetIpFromAddress(addr string) string {
-	return strings.Split(addr, ":")[0]
+func GetIpAndPortFromAddr(addr net.Addr) (ip string, port int) {
+	switch addr.(type) {
+
+	case *net.TCPAddr:
+		ip = addr.(*net.TCPAddr).IP.String()
+		port = addr.(*net.TCPAddr).Port
+	}
+
+	return ip, port
 }
