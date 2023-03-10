@@ -51,7 +51,7 @@ func RunCLI() error {
 			return err
 		}
 
-		uuid, err := uuid.NewRandom()
+		_, err = uuid.NewRandom()
 		if err != nil {
 			return err
 		}

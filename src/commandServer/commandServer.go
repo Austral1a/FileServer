@@ -58,8 +58,6 @@ func (cs *CommandServer) acceptLoop(ln net.Listener) {
 func (cs *CommandServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	buf := make([]byte, 256)
-
 	// invokes only when client firstly connected.
 	// Needed to send 220 code to FTP Client to establish the following commands
 	err := cs.clientConnected(conn)
@@ -71,6 +69,8 @@ func (cs *CommandServer) handleConnection(conn net.Conn) {
 	// TODO TODO: Check if ftp client can connect from any port
 
 	for {
+		buf := make([]byte, 256)
+
 		n, err := conn.Read(buf)
 		if err != nil && err != io.EOF {
 			fmt.Println("read from connection error:", err)
@@ -79,9 +79,8 @@ func (cs *CommandServer) handleConnection(conn net.Conn) {
 
 		command := string(buf[:n])
 
-		fmt.Println("CLIENT IN LOOP", conn.RemoteAddr())
-
 		if command != "" {
+			fmt.Println("CLIENT'S COMMAND", command)
 			client, ok := cs.Clients[conn.RemoteAddr()]
 			if !ok {
 				fmt.Println("client is not found")
@@ -127,7 +126,7 @@ func (cs *CommandServer) SendMsgToFTPClient(clientAddr net.Addr, code int, msg s
 		return errors.New("client is not found")
 	}
 
-	_, err := client.Conn.Write([]byte(fmt.Sprintf("%d %s\n", code, msg)))
+	_, err := client.Conn.Write([]byte(fmt.Sprintf("%d %s\r\n", code, msg)))
 	if err != nil {
 		return err
 	}

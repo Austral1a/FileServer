@@ -5,10 +5,12 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/Austral1a/FileServer/src/types"
-	"github.com/google/uuid"
 	"log"
+	"mime"
 	"net"
 	"os"
+	"path/filepath"
+	"syscall"
 )
 
 type DsFTPClient struct {
@@ -66,7 +68,6 @@ func (ds *DataServer) startPassiveServer() {
 	if err != nil {
 		fmt.Println("passive data server start error:", err)
 	}
-
 }
 
 func (ds *DataServer) SendDataToFTPClient(client *DsFTPClient, info []byte) error {
@@ -124,7 +125,7 @@ func (ds *DataServer) GetFilesAndDirsListByLISTFormat() (bytes.Buffer, error) {
 			return bytes.Buffer{}, err
 		}
 
-		files.WriteString(fmt.Sprintf("-%s %d %s %s\n", info.Mode().Perm(), info.Size(), info.ModTime().Format("Jan 01 2006"), info.Name()))
+		files.WriteString(fmt.Sprintf("%s %d %s %s\r\n", info.Mode().Perm(), info.Size(), info.ModTime().Format("Jan 01 2006"), info.Name()))
 	}
 
 	return files, nil
@@ -139,6 +140,7 @@ func (ds *DataServer) GetFilesAndDirsByMLSDFormat() (bytes.Buffer, error) {
 	files := bytes.Buffer{}
 
 	for _, entry := range dir {
+		facts := make(map[string]any)
 
 		// format and return only files for now
 		info, err := entry.Info()
@@ -146,8 +148,47 @@ func (ds *DataServer) GetFilesAndDirsByMLSDFormat() (bytes.Buffer, error) {
 			return bytes.Buffer{}, err
 		}
 
-		files.WriteString(fmt.Sprintf("Type=%s;Unique=%s;Size=%d;Modify=%d;Perm=%s; %s\n", "file", uuid.New().String(), info.Size(), info.ModTime().Unix(), "r", info.Name()))
+		fmt.Println("!!!FILE PATH", info.Name())
+		// need to gather all files and dirs in a list, using new func
+		factType := ""
+
+		if !info.IsDir() {
+			factType = "file"
+		} else {
+			factType = "dir"
+		}
+
+		facts["Size"] = info.Size()
+		facts["Modify"] = info.ModTime()
+		// no data about this on linux, so leave empty
+		facts["Create"] = ""
+		facts["Type"] = factType
+		facts["Unique"] = info.Sys().(*syscall.Stat_t).Uid
+		// TODO: skip this for now
+		//facts["Perm"] = info.Mode().Perm()
+
+		// imagine all files are en-US
+		facts["Lang"] = "en-US"
+		facts["Media-Type"] = mime.TypeByExtension(filepath.Ext(info.Name()))
+		// TODO: imagine all files are in UTF-8 encoding, for now..
+		facts["CharSet"] = "UTF-8"
+
+		var factsLine string
+
+		for id, val := range facts {
+			if val != "" {
+				factsLine += fmt.Sprintf("%s=%s;", facts[id], val)
+			}
+		}
+
+		fmt.Println(facts, " FACTS ")
+
+		//fmt.Println(fmt.Sprintf("%s %s\r\n", factsLine, info.Name()), " Aadsadadasdasdad")
+
+		files.WriteString(fmt.Sprintf("%s %s\r\n", factsLine, info.Name()))
 	}
+
+	//fmt.Println(files.String())
 
 	return files, nil
 }

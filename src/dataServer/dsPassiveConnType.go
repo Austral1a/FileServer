@@ -10,17 +10,18 @@ import (
 )
 
 type PassiveDataServer struct {
+	Port    uint16
 	ln      net.Listener
 	Clients map[string]*DsFTPClient
 }
 
 func (pds *PassiveDataServer) NewServer() *PassiveDataServer {
-	return &PassiveDataServer{Clients: make(map[string]*DsFTPClient)}
+	return &PassiveDataServer{Clients: make(map[string]*DsFTPClient), Port: 1024}
 }
 
 func (pds *PassiveDataServer) Start() error {
 	// TODO: Get port from env
-	ln, err := net.Listen("tcp", ":20")
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", pds.Port))
 	if err != nil {
 		return err
 	}

@@ -37,11 +37,11 @@ func (ftp *FTPServer) HandleCommands() {
 		for _, client := range ftp.Cs.Clients {
 			select {
 			case cmd := <-client.CommandsQueueCh:
-				cmdItself, _ := ftp.sliceUpCommand(cmd)
+				//cmdItself, _ := ftp.sliceUpCommand(cmd)
 
-				connType := ftp.defineConnTypeByCommand(cmdItself)
+				//connType := ftp.defineConnTypeByCommand(cmdItself)
 
-				client.ConnType = connType
+				//client.ConnType = connType
 
 				err := ftp.handleCommand(client.Conn, cmd)
 				if err != nil {
@@ -86,6 +86,9 @@ func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
 	case command.EPSV:
 		return DoCommandEPSV(conn, ftp)
 
+	case command.PASV:
+		return DoCommandPASV(conn, ftp)
+
 	case command.EPRT:
 		return DoCommandEPSV(conn, ftp)
 
@@ -93,7 +96,7 @@ func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
 		return DoCommandTYPE(conn, ftp, args)
 
 	case command.LIST:
-		return DoCommandLIST(conn, ftp, args)
+		return DoCommandLIST(conn, ftp)
 
 	case command.MLSD:
 		return DoCommandMLSD(conn, ftp)

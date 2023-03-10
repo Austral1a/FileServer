@@ -2,9 +2,13 @@ package ftpserver
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/Austral1a/FileServer/src/utils"
+	"math"
+	"math/rand"
 	"net"
+	"time"
 )
 
 func DoCommandUSER(conn net.Conn, userName string) error {
@@ -95,7 +99,46 @@ func DoCommandCWD(conn net.Conn, s *FTPServer, newWorkingDir string) error {
 }
 
 func DoCommandEPSV(conn net.Conn, s *FTPServer) error {
-	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 229, "Entering Extended Passive Mode (|||20|).")
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 229, fmt.Sprintf("Entering Extended Passive Mode (|||%d|).", s.Ds.Pds.Port))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func getP1P2() (int, int, error) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	getRandomPort := func() int {
+		return r.Intn(math.MaxUint16-1024) + 1024
+	}
+
+	for {
+		// first generate random port, second cast uint16 to uint8 "port / 256"
+		p1 := getRandomPort() / 256
+		p2 := getRandomPort() / 256
+
+		port := (p1 * 256) + p2
+
+		if port < 1024 {
+			return 0, 0, errors.New("port cannot be less than 1024 since values < 1024 are reserved")
+		}
+
+		if port > math.MaxUint16 {
+			return 0, 0, errors.New(fmt.Sprintf("port cannot be more than %d since it is more than max port number", math.MaxUint16))
+		}
+
+		return p1, p2, nil
+	}
+}
+
+func DoCommandPASV(conn net.Conn, s *FTPServer) error {
+	p1 := s.Ds.Pds.Port / 256
+	p2 := 0
+
+	// TODO: ip is mocked
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 227, fmt.Sprintf("Entering Passive Mode (127,0,0,1,%d,%d).", p1, p2))
 	if err != nil {
 		return err
 	}
@@ -118,7 +161,7 @@ func DoCommandTYPE(conn net.Conn, s *FTPServer, newDataTransferType string) erro
 	return nil
 }
 
-func DoCommandLIST(conn net.Conn, s *FTPServer, flags string) error {
+func DoCommandLIST(conn net.Conn, s *FTPServer) error {
 	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data connection already open; transfer starting.")
 	if err != nil {
 		return err
@@ -135,9 +178,8 @@ func DoCommandLIST(conn net.Conn, s *FTPServer, flags string) error {
 
 	connType := s.defineConnTypeByClient(conn)
 	switch connType {
-	case "passive":
-		fmt.Println(connType, " Conn type ")
 
+	case "passive":
 		err = s.Ds.SendDataToFTPClient(s.Ds.Pds.Clients[ip], list.Bytes())
 		if err != nil {
 			return err
@@ -154,9 +196,17 @@ func DoCommandLIST(conn net.Conn, s *FTPServer, flags string) error {
 				}
 			}
 		}
+
+	default:
+		err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 451, "Requested action aborted. Local error in processing.")
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
-	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 226, "Requested file action okay, completed.")
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Requested file action okay, completed.")
 	if err != nil {
 		return err
 	}
@@ -164,7 +214,6 @@ func DoCommandLIST(conn net.Conn, s *FTPServer, flags string) error {
 	return nil
 }
 
-// TODO: Simplify everything!!!. just use switch case when need to understand where should be used Passive or Active Server!!!!
 func DoCommandMLSD(conn net.Conn, s *FTPServer) error {
 	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data connection already open; transfer starting.")
 	if err != nil {
@@ -178,9 +227,7 @@ func DoCommandMLSD(conn net.Conn, s *FTPServer) error {
 
 	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
 
-	fmt.Println(files.String(), " - MLSD")
-	// TODO: add ClientAddr type as key instead of net.Addr for CS as well
-
+	// TODO: addн ClientAddr type as key instead of net.Addr for CS as well
 	connType := s.defineConnTypeByClient(conn)
 	switch connType {
 	case "passive":
