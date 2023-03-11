@@ -11,15 +11,13 @@ import (
 	"time"
 )
 
-func DoCommandUSER(conn net.Conn, userName string) error {
+func DoCommandUSER(conn net.Conn, s *FTPServer, userName string) error {
 	// "anonymous" user handler
 	if userName == "anonymous" {
-		n, err := conn.Write([]byte("230 Anonymous login ok\n"))
+		err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 230, "Anonymous login ok.")
 		if err != nil {
 			return err
 		}
-
-		fmt.Println("bytes written: ", n)
 
 		return nil
 	}
@@ -27,8 +25,8 @@ func DoCommandUSER(conn net.Conn, userName string) error {
 	return nil
 }
 
-func DoCommandPWD(conn net.Conn) error {
-	_, err := conn.Write([]byte(fmt.Sprintf("257 \"%s\" %v", "", "\n")))
+func DoCommandPWD(conn net.Conn, s *FTPServer) error {
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 257, "/")
 	if err != nil {
 		return err
 	}
@@ -36,8 +34,8 @@ func DoCommandPWD(conn net.Conn) error {
 	return nil
 }
 
-func DoCommandSYST(conn net.Conn) error {
-	_, err := conn.Write([]byte("215 Unix-like, MacOS\n"))
+func DoCommandSYST(conn net.Conn, s *FTPServer) error {
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 215, "Unix-like, MacOS")
 	if err != nil {
 		return err
 	}
@@ -70,15 +68,18 @@ func DoCommandQUIT(conn net.Conn, s *FTPServer) error {
 	return nil
 }
 
-func DoCommandFEAT(conn net.Conn) error {
+func DoCommandFEAT(conn net.Conn, s *FTPServer) error {
 	// TODO: refactor
 	// need check for possible "extended features" list add it or not add it ) and impl
 	supportedFeatures := bytes.Buffer{}
 
-	supportedFeatures.Write([]byte("211 Extensions supported: \n"))
+	supportedFeatures.Write([]byte("211-Extensions supported: \r\n"))
 	// TODO: SIZE Command is not implemented, yet
-	supportedFeatures.Write([]byte("SIZE\n"))
+	supportedFeatures.Write([]byte("feat=SIZE\r\n"))
 
+	supportedFeatures.Write([]byte("211 End \r\n"))
+
+	//err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 211, "Extensions supported:")
 	_, err := conn.Write(supportedFeatures.Bytes())
 	if err != nil {
 		return err
@@ -161,13 +162,89 @@ func DoCommandTYPE(conn net.Conn, s *FTPServer, newDataTransferType string) erro
 	return nil
 }
 
+func DoCommandSTAT(conn net.Conn, s *FTPServer, pathname string) error {
+	// check if pathname is given or not
+
+	// if given then send info about file
+	/*
+		example:
+		Client: STAT /
+		Server: 213-Status of '/'
+		Server: drwxrwxr-x    3 user     group        4096 Jan 01 00:00 directory1
+		Server: -rw-rw-r--    1 user     group        1024 Jan 01 00:00 file1
+		Server: -rw-rw-r--    1 user     group        2048 Jan 01 00:00 file2
+		Server: 213 End of status.
+	*/
+	if len(pathname) > 0 {
+		buf := bytes.Buffer{}
+
+		buf.WriteString(fmt.Sprintf("213-Status of '%s':\r\n", pathname))
+
+		list, err := s.Ds.GetFilesAndDirsListByLISTFormat(pathname)
+		if err != nil {
+			return err
+		}
+
+		buf.WriteString(list.String())
+
+		buf.WriteString("213 End of status.\r\n")
+
+		_, err = conn.Write(buf.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+
+	// if not given then send info about ftp server
+	/*
+		example:
+		Client: STAT
+		Server: 211-FTP server status:
+		Server:     Connected to ::1
+		Server:     Logged in as username
+		Server:     TYPE: ASCII
+		Server:     No session bandwidth limit
+		Server:     Session timeout in seconds is 300
+		Server:     Control connection is plain text
+		Server:     Data connections will be plain text
+		Server:     At session startup, client count was 1
+		Server:     vsFTPd 3.0.3
+		Server: 211 End of status
+	*/
+	if len(pathname) == 0 {
+		buf := bytes.Buffer{}
+
+		buf.WriteString("211-FTP Server status:\r\n")
+
+		infoMap := s.GetServerInfo(conn.RemoteAddr())
+
+		for k, v := range infoMap {
+			buf.WriteString("\t" + k + " " + v + "\r\n")
+		}
+
+		buf.WriteString("211 End of status\r\n")
+
+		_, err := conn.Write(buf.Bytes())
+		if err != nil {
+			return err
+		}
+
+		_, err = conn.Write(buf.Bytes())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func DoCommandLIST(conn net.Conn, s *FTPServer) error {
 	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data connection already open; transfer starting.")
 	if err != nil {
 		return err
 	}
 
-	list, err := s.Ds.GetFilesAndDirsListByLISTFormat()
+	list, err := s.Ds.GetFilesAndDirsListByLISTFormat("")
 	if err != nil {
 		return err
 	}
@@ -206,6 +283,7 @@ func DoCommandLIST(conn net.Conn, s *FTPServer) error {
 		return nil
 	}
 
+	// TODO: probably when there conn type branches  "s.Cs.SendMsgToFTPClient" should be in active and passive to handle different response codes
 	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Requested file action okay, completed.")
 	if err != nil {
 		return err

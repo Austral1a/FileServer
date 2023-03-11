@@ -8,6 +8,7 @@ import (
 	"github.com/Austral1a/FileServer/src/types"
 	"github.com/Austral1a/FileServer/src/utils"
 	"net"
+	"strconv"
 	"strings"
 )
 
@@ -37,12 +38,7 @@ func (ftp *FTPServer) HandleCommands() {
 		for _, client := range ftp.Cs.Clients {
 			select {
 			case cmd := <-client.CommandsQueueCh:
-				//cmdItself, _ := ftp.sliceUpCommand(cmd)
-
-				//connType := ftp.defineConnTypeByCommand(cmdItself)
-
-				//client.ConnType = connType
-
+				fmt.Println(cmd, " - CMD")
 				err := ftp.handleCommand(client.Conn, cmd)
 				if err != nil {
 					fmt.Printf("can't handle command: %s; from client: %s; err: %s\n", strings.TrimSpace(cmd), client.Conn.RemoteAddr().String(), err)
@@ -66,19 +62,19 @@ func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
 	switch cmd {
 
 	case command.USER:
-		return DoCommandUSER(conn, args)
+		return DoCommandUSER(conn, ftp, args)
 
 	case command.PWD:
-		return DoCommandPWD(conn)
+		return DoCommandPWD(conn, ftp)
 
 	case command.SYST:
-		return DoCommandSYST(conn)
+		return DoCommandSYST(conn, ftp)
 
 	case command.OPTS:
 		return DoCommandOPTS(conn)
 
 	case command.FEAT:
-		return DoCommandFEAT(conn)
+		return DoCommandFEAT(conn, ftp)
 
 	case command.CWD:
 		return DoCommandCWD(conn, ftp, args)
@@ -94,6 +90,9 @@ func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
 
 	case command.TYPE:
 		return DoCommandTYPE(conn, ftp, args)
+
+	case command.STAT:
+		return DoCommandSTAT(conn, ftp, args)
 
 	case command.LIST:
 		return DoCommandLIST(conn, ftp)
@@ -157,4 +156,32 @@ func (ftp *FTPServer) defineConnTypeByClient(conn net.Conn) types.ConnectionType
 	}
 
 	return ""
+}
+
+// TODO: remade map into struct
+func (ftp *FTPServer) GetServerInfo(clientAddr net.Addr) map[string]string {
+	infoMap := make(map[string]string)
+
+	client := ftp.Cs.Clients[clientAddr]
+
+	infoMap["Connected to"] = ":21"
+	infoMap["Logged in as"] = client.UserName
+	if client.DataTransferType == "A" {
+		infoMap["TYPE:"] = "ASCII"
+	} else if client.DataTransferType == "I" {
+		infoMap["TYPE:"] = "image/binary"
+	}
+	infoMap["Session timeout in seconds is"] = "0"
+	infoMap["Control connection"] = "is plain text"
+
+	if client.DataTransferType == "A" {
+		infoMap["Data connections will be"] = "plain text"
+	} else if client.DataTransferType == "I" {
+		infoMap["Data connections will be"] = "binary"
+	}
+
+	infoMap["At session startup, client count was"] = strconv.Itoa(len(ftp.Cs.Clients))
+	infoMap["ftpserver"] = "0.0.1"
+
+	return infoMap
 }

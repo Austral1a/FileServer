@@ -13,6 +13,7 @@ const DELE = "DELE"
 const RETP = "RETP"
 
 const SYST = "SYST"
+const STAT = "STAT"
 const OPTS = "OPTS"
 const QUIT = "QUIT"
 const FEAT = "FEAT"

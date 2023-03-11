@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 type DsFTPClient struct {
@@ -111,8 +110,8 @@ func (ds *DataServer) saveFile(f *types.File, where string) error {
 	return nil
 }
 
-func (ds *DataServer) GetFilesAndDirsListByLISTFormat() (bytes.Buffer, error) {
-	dir, err := os.ReadDir("storage")
+func (ds *DataServer) GetFilesAndDirsListByLISTFormat(pathname string) (bytes.Buffer, error) {
+	dir, err := os.ReadDir("storage" + pathname)
 	if err != nil {
 		return bytes.Buffer{}, err
 	}
@@ -125,7 +124,7 @@ func (ds *DataServer) GetFilesAndDirsListByLISTFormat() (bytes.Buffer, error) {
 			return bytes.Buffer{}, err
 		}
 
-		files.WriteString(fmt.Sprintf("%s %d %s %s\r\n", info.Mode().Perm(), info.Size(), info.ModTime().Format("Jan 01 2006"), info.Name()))
+		files.WriteString(fmt.Sprintf("%s 1 %d %s %s\r\n", info.Mode().Perm(), info.Size(), info.ModTime().Format("Jan 01 2006"), info.Name()))
 	}
 
 	return files, nil
@@ -163,7 +162,7 @@ func (ds *DataServer) GetFilesAndDirsByMLSDFormat() (bytes.Buffer, error) {
 		// no data about this on linux, so leave empty
 		facts["Create"] = ""
 		facts["Type"] = factType
-		facts["Unique"] = info.Sys().(*syscall.Stat_t).Uid
+		facts["Unique"] = info.ModTime().UnixMilli()
 		// TODO: skip this for now
 		//facts["Perm"] = info.Mode().Perm()
 
@@ -175,15 +174,13 @@ func (ds *DataServer) GetFilesAndDirsByMLSDFormat() (bytes.Buffer, error) {
 
 		var factsLine string
 
-		for id, val := range facts {
+		for key, val := range facts {
 			if val != "" {
-				factsLine += fmt.Sprintf("%s=%s;", facts[id], val)
+				factsLine += fmt.Sprintf("%s=%v;", key, val)
 			}
 		}
 
-		fmt.Println(facts, " FACTS ")
-
-		//fmt.Println(fmt.Sprintf("%s %s\r\n", factsLine, info.Name()), " Aadsadadasdasdad")
+		fmt.Println(factsLine, " FACTS LINE")
 
 		files.WriteString(fmt.Sprintf("%s %s\r\n", factsLine, info.Name()))
 	}

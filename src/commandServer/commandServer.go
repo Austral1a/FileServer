@@ -13,10 +13,11 @@ import (
 const FileStorageLocalPath = "storage"
 
 type CsFTPClient struct {
-	// A (ASCII) or I (image/binary)
+	// DataTransferType can be: "A" (ASCII) or "I" (image/binary)
 	DataTransferType string
 	Conn             net.Conn
 	ConnType         types.ConnectionType
+	UserName         string
 	CommandsQueueCh  chan string
 }
 
@@ -63,10 +64,11 @@ func (cs *CommandServer) handleConnection(conn net.Conn) {
 	err := cs.clientConnected(conn)
 	if err != nil && err != io.EOF {
 		fmt.Println("clientConnected:", err)
+		return
 	}
 
-	// TODO TODO: Client id is client's host (not full address ip:port how it was before)
-	// TODO TODO: Check if ftp client can connect from any port
+	// TODO: Client id is client's host (not full address ip:port how it was before)
+	// TODO: Check if ftp client can connect from any port
 
 	for {
 		buf := make([]byte, 256)
@@ -107,10 +109,10 @@ func (cs *CommandServer) isClientConnected(addr net.Addr) bool {
 
 func (cs *CommandServer) clientConnected(conn net.Conn) error {
 	if cs.isClientConnected(conn.RemoteAddr()) {
-		return errors.New(fmt.Sprintf("client %d already connected", conn.RemoteAddr()))
+		return nil
 	}
 
-	_, err := conn.Write([]byte("220 Server ready\n"))
+	_, err := conn.Write([]byte("220 Server ready\r\n"))
 	if err != nil {
 		return err
 	}
