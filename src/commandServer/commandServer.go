@@ -7,10 +7,14 @@ import (
 	"io"
 	"net"
 	"os"
-	"time"
 )
 
 const FileStorageLocalPath = "storage"
+
+type FileRenameProcedurePayload struct {
+	OldFilename string
+	NewFilename string
+}
 
 type CsFTPClient struct {
 	// DataTransferType can be: "A" (ASCII) or "I" (image/binary)
@@ -18,18 +22,33 @@ type CsFTPClient struct {
 	Conn             net.Conn
 	ConnType         types.ConnectionType
 	UserName         string
-	CommandsQueueCh  chan string
+	/*
+		Procedures responsible for resolving commands that are work together or can't work without each other
+		e.g.: RNFR works only with proceeding RNTO
+		map key is procedure name; e.g. file_rename
+		map value is procedure payload
+	*/
+	//Procedures map[string]*interface{}
+	RenameFileProcedure *FileRenameProcedurePayload
+	//CommandsQueueCh  chan string
+}
+
+type Command struct {
+	ClientConn net.Conn
+	// Command can be "USER anonymous"
+	Command string
 }
 
 type CommandServer struct {
-	Clients map[net.Addr]*CsFTPClient
+	Clients       map[net.Addr]*CsFTPClient
+	CommandsQueue chan Command
 	// current working directory of Server
 	WorkingDir string
 	IsStarted  bool
 }
 
 func (cs *CommandServer) NewCommandServer() *CommandServer {
-	return &CommandServer{Clients: make(map[net.Addr]*CsFTPClient), WorkingDir: FileStorageLocalPath}
+	return &CommandServer{Clients: make(map[net.Addr]*CsFTPClient), CommandsQueue: make(chan Command, 8), WorkingDir: FileStorageLocalPath}
 }
 
 func (cs *CommandServer) Start() {
@@ -52,6 +71,13 @@ func (cs *CommandServer) acceptLoop(ln net.Listener) {
 			continue
 		}
 
+		// adds a client to clients list
+		err = cs.clientConnected(conn)
+		if err != nil && err != io.EOF {
+			fmt.Println("clientConnected:", err)
+			continue
+		}
+
 		go cs.handleConnection(conn)
 	}
 }
@@ -59,17 +85,8 @@ func (cs *CommandServer) acceptLoop(ln net.Listener) {
 func (cs *CommandServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	// invokes only when client firstly connected.
-	// Needed to send 220 code to FTP Client to establish the following commands
-	err := cs.clientConnected(conn)
-	if err != nil && err != io.EOF {
-		fmt.Println("clientConnected:", err)
-		return
-	}
-
 	// TODO: Client id is client's host (not full address ip:port how it was before)
 	// TODO: Check if ftp client can connect from any port
-
 	for {
 		buf := make([]byte, 256)
 
@@ -83,18 +100,22 @@ func (cs *CommandServer) handleConnection(conn net.Conn) {
 
 		if command != "" {
 			fmt.Println("CLIENT'S COMMAND", command)
-			client, ok := cs.Clients[conn.RemoteAddr()]
-			if !ok {
+			client, _ := cs.Clients[conn.RemoteAddr()]
+			fmt.Println(client, "- CLIENT with command", command)
+			/*if !ok {
 				fmt.Println("client is not found")
+				continue
+			}*/
+
+			fmt.Println(command + " COMMAND  BEFORE CHAN")
+			fmt.Println(conn.RemoteAddr(), " CLIENT ADDR")
+
+			//client.CommandsQueueCh <- command
+			cs.CommandsQueue <- Command{
+				ClientConn: conn,
+				Command:    command,
 			}
-
-			client.CommandsQueueCh <- command
 		}
-
-		fmt.Println("command: ", command)
-		fmt.Println(conn.RemoteAddr())
-
-		time.Sleep(time.Millisecond * 100)
 	}
 }
 
@@ -112,12 +133,12 @@ func (cs *CommandServer) clientConnected(conn net.Conn) error {
 		return nil
 	}
 
-	_, err := conn.Write([]byte("220 Server ready\r\n"))
+	cs.Clients[conn.RemoteAddr()] = &CsFTPClient{Conn: conn}
+
+	err := cs.SendMsgToFTPClient(conn.RemoteAddr(), 220, "Server ready.")
 	if err != nil {
 		return err
 	}
-
-	cs.Clients[conn.RemoteAddr()] = &CsFTPClient{Conn: conn, CommandsQueueCh: make(chan string, 1)}
 
 	return nil
 }
@@ -152,6 +173,7 @@ func (cs *CommandServer) DisconnectClient(clientAddr net.Addr) error {
 	return nil
 }
 
+// TODO: WorkingDir should be in a FTPClient struct
 func (cs *CommandServer) ChangeWorkingDir(newWorkDir string) {
 	cs.WorkingDir = newWorkDir
 }

@@ -8,9 +8,12 @@ const PWD = "PWD"
 const CWD = "CWD"
 const LIST = "LIST"
 const MLSD = "MLSD"
+
 const STOR = "STOR"
 const DELE = "DELE"
 const RETP = "RETP"
+const RNFR = "RNFR"
+const RNTO = "RNTO"
 
 const SYST = "SYST"
 const STAT = "STAT"
@@ -20,7 +23,6 @@ const FEAT = "FEAT"
 const TYPE = "TYPE"
 
 // connection modes
-// TODO: needs support
 const EPSV = "EPSV"
 const PASV = "PASV"
 const EPRT = "EPRT"

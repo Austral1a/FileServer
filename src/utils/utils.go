@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/gob"
 	"fmt"
-	"github.com/Austral1a/FileServer/src/types"
 	"github.com/mbndr/figlet4go"
 	"io"
 	"net"
@@ -31,46 +29,46 @@ func GetFileNameAndExt(fileName string) (name, ext string, err error) {
 	return tempMap["Name"], tempMap["Ext"], nil
 }
 
-func SendRealFile(filename string) {
-	conn, err := net.Dial("tcp", ":20")
-	if err != nil {
-		fmt.Println(err)
+/*
+	func SendRealFile(filename string) {
+		conn, err := net.Dial("tcp", ":20")
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		file, err := os.Open(filename)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		f, err := io.ReadAll(file)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		var buf bytes.Buffer
+		encoder := gob.NewEncoder(&buf)
+
+		name, _, err := GetFileNameAndExt(file.Name())
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		err = encoder.Encode(types.File{
+			Name: name,
+
+			Data: bytes.Buffer{}.Write(&f),
+		})
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		_, err = conn.Write(buf.Bytes())
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
-
-	file, err := os.Open(filename)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	f, err := io.ReadAll(file)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-
-	name, ext, err := GetFileNameAndExt(file.Name())
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	err = encoder.Encode(types.File{
-		Name:      name,
-		Extension: ext,
-
-		Bytes: f,
-	})
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	_, err = conn.Write(buf.Bytes())
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
+*/
 func SendFile(size int) error {
 	file := make([]byte, (1024*1000)*500)
 	_, err := io.ReadFull(rand.Reader, file)
@@ -118,4 +116,14 @@ func GetIpAndPortFromAddr(addr net.Addr) (ip string, port int) {
 	}
 
 	return ip, port
+}
+
+func IsFileExists(filepath string) error {
+	if _, err := os.Stat(filepath); err != nil {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

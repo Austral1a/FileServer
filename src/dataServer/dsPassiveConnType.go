@@ -1,10 +1,12 @@
 package dataServer
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/Austral1a/FileServer/src/utils"
 	"io"
+	"log"
 	"net"
 	"time"
 )
@@ -30,7 +32,7 @@ func (pds *PassiveDataServer) Start() error {
 
 	go pds.acceptConnection(ln)
 
-	fmt.Println("Passive DS started")
+	log.Println("Passive DS started")
 
 	return nil
 }
@@ -51,6 +53,11 @@ func (pds *PassiveDataServer) acceptConnection(ln net.Listener) {
 			fmt.Println("accept error: ", err)
 		}
 
+		err = pds.clientConnected(conn)
+		if err != nil && err != io.EOF {
+			fmt.Println("clientConnected:", err)
+		}
+
 		go pds.handleConnection(conn)
 	}
 }
@@ -58,14 +65,25 @@ func (pds *PassiveDataServer) acceptConnection(ln net.Listener) {
 func (pds *PassiveDataServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	err := pds.clientConnected(conn)
+	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
 
-	if err != nil && err != io.EOF {
-		fmt.Println("clientConnected:", err)
-	}
+	client := pds.Clients[ip]
 
-	// Results: need to somehow imlp EPSV mode, mean FTP client connects to FTP Server DS and then when needed DS sends to FTP Client data
 	for {
+		buf := bytes.Buffer{}
+
+		n, err := io.Copy(&buf, conn)
+		if err != nil {
+			fmt.Println("read from conn error:", err)
+			continue
+		}
+
+		if n > 0 {
+			client.SentDataCh <- buf.Bytes()
+
+			client.AllDataIsSent <- struct{}{}
+		}
+
 		time.Sleep(time.Millisecond * 100)
 	}
 }
@@ -77,7 +95,7 @@ func (pds *PassiveDataServer) clientConnected(conn net.Conn) error {
 
 	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
 
-	pds.Clients[ip] = &DsFTPClient{Conn: conn, ConnType: "passive"}
+	pds.Clients[ip] = &DsFTPClient{Conn: conn, ConnType: "passive", SentDataCh: make(chan []byte, 99), AllDataIsSent: make(chan struct{}, 1)}
 
 	return nil
 }

@@ -7,7 +7,9 @@ import (
 	"github.com/Austral1a/FileServer/src/dataServer"
 	"github.com/Austral1a/FileServer/src/types"
 	"github.com/Austral1a/FileServer/src/utils"
+	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -31,20 +33,32 @@ func (ftp *FTPServer) NewFTPServer() *FTPServer {
 
 func (ftp *FTPServer) HandleCommands() {
 	for {
-		if len(ftp.Cs.Clients) < 1 {
-			continue
-		}
+		select {
+		case cmd := <-ftp.Cs.CommandsQueue:
+			fmt.Println("-------------HANDLE COMMANDS-----------------------")
 
-		for _, client := range ftp.Cs.Clients {
+			err := ftp.handleCommand(cmd.ClientConn, cmd.Command)
+			if err != nil {
+				fmt.Printf("can't handle command: %s; from client: %s; err: %s\n", strings.TrimSpace(cmd.Command), cmd.ClientConn.RemoteAddr().String(), err)
+			}
+			fmt.Println("------------------------------------")
+		}
+		/*for _, client := range ftp.Cs.Clients {
+			fmt.Println("IN FTP CS CLIENTS RANGE", client)
 			select {
 			case cmd := <-client.CommandsQueueCh:
-				fmt.Println(cmd, " - CMD")
+				fmt.Println("-------------HANDLE COMMANDS-----------------------")
+				fmt.Printf("%#v  Client\n", *client)
+
 				err := ftp.handleCommand(client.Conn, cmd)
 				if err != nil {
 					fmt.Printf("can't handle command: %s; from client: %s; err: %s\n", strings.TrimSpace(cmd), client.Conn.RemoteAddr().String(), err)
 				}
+				fmt.Printf("%#v  Client After handle command\n", *client)
+				fmt.Println("------------------------------------")
 			}
 		}
+		time.Sleep(time.Millisecond + 100)*/
 	}
 }
 
@@ -94,8 +108,20 @@ func (ftp *FTPServer) handleCommand(conn net.Conn, msg string) error {
 	case command.STAT:
 		return DoCommandSTAT(conn, ftp, args)
 
+	case command.DELE:
+		return DoCommandDELE(conn, ftp, args)
+
+	case command.STOR:
+		return DoCommandSTOR(conn, ftp, args)
+
 	case command.LIST:
 		return DoCommandLIST(conn, ftp)
+
+	case command.RNFR:
+		return DoCommandRNFR(conn, ftp, args)
+
+	case command.RNTO:
+		return DoCommandRNTO(conn, ftp, args)
 
 	case command.MLSD:
 		return DoCommandMLSD(conn, ftp)
@@ -127,7 +153,7 @@ func (ftp *FTPServer) defineConnTypeByCommand(cmd string) types.ConnectionType {
 
 // SliceUpCommand slices up a command; example of command: "LIST -a" where LIST is cmdItself, -a is args
 func (ftp *FTPServer) sliceUpCommand(command string) (cmdItself string, args string) {
-	slicedCommand := strings.Split(command, " ") // msg example: "USER Anonymous"
+	slicedCommand := strings.SplitN(command, " ", 2)
 
 	cmdItself = strings.TrimSpace(slicedCommand[0])
 
@@ -184,4 +210,46 @@ func (ftp *FTPServer) GetServerInfo(clientAddr net.Addr) map[string]string {
 	infoMap["ftpserver"] = "0.0.1"
 
 	return infoMap
+}
+
+func (ftp *FTPServer) saveFile(f *types.File, where string) error {
+	newFile, err := os.Create(where + f.Name)
+	defer func() {
+		err := newFile.Close()
+		if err != nil {
+			log.Println("Failed to close file: ", err)
+		}
+	}()
+	if err != nil {
+		return err
+	}
+
+	_, err = newFile.Write(f.Data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ftp *FTPServer) getActualClient(conn net.Conn) *dataServer.DsFTPClient {
+	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
+
+	pdsClient := ftp.Ds.Pds.Clients[ip]
+	var adsClient *dataServer.DsFTPClient
+	for _, v := range ftp.Ds.Ads {
+		if v.Client.Conn == conn {
+			adsClient = v.Client
+		}
+	}
+
+	var actualClient *dataServer.DsFTPClient
+
+	if pdsClient.Conn != nil {
+		actualClient = pdsClient
+	} else if adsClient.Conn != nil {
+		actualClient = adsClient
+	}
+
+	return actualClient
 }

@@ -4,8 +4,7 @@ package types
 type ConnectionType string
 
 type File struct {
-	Name      string
-	Extension string
-
-	Bytes []byte
+	// Name can be "filename.txt"
+	Name string
+	Data []byte
 }

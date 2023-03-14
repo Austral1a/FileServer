@@ -4,14 +4,21 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/Austral1a/FileServer/src/commandServer"
+	"github.com/Austral1a/FileServer/src/types"
 	"github.com/Austral1a/FileServer/src/utils"
 	"math"
 	"math/rand"
 	"net"
+	"os"
 	"time"
 )
 
 func DoCommandUSER(conn net.Conn, s *FTPServer, userName string) error {
+	defer func() {
+		s.Cs.Clients[conn.RemoteAddr()].UserName = userName
+	}()
+
 	// "anonymous" user handler
 	if userName == "anonymous" {
 		err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 230, "Anonymous login ok.")
@@ -35,7 +42,7 @@ func DoCommandPWD(conn net.Conn, s *FTPServer) error {
 }
 
 func DoCommandSYST(conn net.Conn, s *FTPServer) error {
-	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 215, "Unix-like, MacOS")
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 215, "MACOS")
 	if err != nil {
 		return err
 	}
@@ -55,7 +62,7 @@ func DoCommandOPTS(conn net.Conn) error {
 }
 
 func DoCommandQUIT(conn net.Conn, s *FTPServer) error {
-	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 221, "Bye")
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 221, "Bye.")
 	if err != nil {
 		return err
 	}
@@ -91,7 +98,7 @@ func DoCommandFEAT(conn net.Conn, s *FTPServer) error {
 func DoCommandCWD(conn net.Conn, s *FTPServer, newWorkingDir string) error {
 	s.Cs.ChangeWorkingDir(newWorkingDir)
 
-	_, err := conn.Write([]byte("250 Working dir has been changed\n"))
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Working dir has been changed")
 	if err != nil {
 		return err
 	}
@@ -154,9 +161,61 @@ func DoCommandTYPE(conn net.Conn, s *FTPServer, newDataTransferType string) erro
 		fmt.Println("change data transfer type error: ", err)
 	}
 
-	_, err = conn.Write([]byte(fmt.Sprintf("200 Type set to %s\n", newDataTransferType)))
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 200, "Type set to "+newDataTransferType)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func DoCommandDELE(conn net.Conn, s *FTPServer, filenameToDelete string) error {
+	err := os.Remove("storage" + filenameToDelete)
+	if err != nil {
+		err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 550, "Requested action not taken. File not found")
+		if err != nil {
+			fmt.Println("send to client error: ", err)
+		}
+	}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Requested file action okay, completed.")
+	if err != nil {
+		fmt.Println("send to client error: ", err)
+	}
+
+	return nil
+}
+
+func DoCommandSTOR(conn net.Conn, s *FTPServer, filenameToStore string) error {
+	// TODO: STOR can re-write existing file
+	err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 125, "Data connection already open; transfer starting.")
+	if err != nil {
+		fmt.Println("send to client error: ", err)
+	}
+
+	actualClient := s.getActualClient(conn)
+
+L:
+	for {
+		select {
+
+		case data := <-actualClient.SentDataCh:
+			err := s.saveFile(&types.File{
+				Name: filenameToStore,
+				Data: data,
+			}, "storage")
+			if err != nil {
+				fmt.Println("save file error: ", err)
+			}
+
+		case <-actualClient.AllDataIsSent:
+			break L
+		}
+	}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Requested file action okay, completed.")
+	if err != nil {
+		fmt.Println("send to client error: ", err)
 	}
 
 	return nil
@@ -305,7 +364,7 @@ func DoCommandMLSD(conn net.Conn, s *FTPServer) error {
 
 	ip, _ := utils.GetIpAndPortFromAddr(conn.RemoteAddr())
 
-	// TODO: addн ClientAddr type as key instead of net.Addr for CS as well
+	// TODO: add ClientAddr type as key instead of net.Addr for CS as well
 	connType := s.defineConnTypeByClient(conn)
 	switch connType {
 	case "passive":
@@ -330,6 +389,56 @@ func DoCommandMLSD(conn net.Conn, s *FTPServer) error {
 	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Requested file action okay, completed.")
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func DoCommandRNFR(conn net.Conn, s *FTPServer, filenameToBeRenamed string) error {
+	defer func() {
+		s.Cs.Clients[conn.RemoteAddr()].RenameFileProcedure = &commandServer.FileRenameProcedurePayload{
+			OldFilename: filenameToBeRenamed,
+			NewFilename: "",
+		}
+	}()
+
+	err := utils.IsFileExists("storage" + filenameToBeRenamed)
+	if err != nil {
+		err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 450, "Requested file action not taken. File unavailable.")
+		if err != nil {
+			fmt.Println("file error: ", err)
+		}
+	}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 350, "Requested file action pending further information.")
+	if err != nil {
+		fmt.Println("send to msg to client error: ", err)
+	}
+
+	return nil
+}
+
+func DoCommandRNTO(conn net.Conn, s *FTPServer, newFilename string) error {
+	procedure := s.Cs.Clients[conn.RemoteAddr()].RenameFileProcedure
+
+	procedure.NewFilename = newFilename
+
+	defer func() {
+		procedure.OldFilename = ""
+		procedure.NewFilename = ""
+	}()
+
+	err := os.Rename("storage"+procedure.OldFilename, "storage"+procedure.NewFilename)
+	if err != nil {
+		err := s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 553, "Requested action not taken. Rename error.")
+		if err != nil {
+			fmt.Println("send to msg to client error: ", err)
+		}
+	}
+
+	err = s.Cs.SendMsgToFTPClient(conn.RemoteAddr(), 250, "Requested file action okay, completed.")
+	if err != nil {
+		fmt.Println("send to msg to client error: ", err)
 	}
 
 	return nil

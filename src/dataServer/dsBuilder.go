@@ -15,6 +15,10 @@ import (
 type DsFTPClient struct {
 	Conn     net.Conn
 	ConnType types.ConnectionType
+
+	// SentDataCh stores received from FTP Client bytes. Bytes are typically files.
+	SentDataCh    chan []byte
+	AllDataIsSent chan struct{}
 }
 
 type ClientAddr struct {
@@ -91,7 +95,7 @@ func (ds *DataServer) deserializeFile(conn net.Conn) (*types.File, error) {
 }
 
 func (ds *DataServer) saveFile(f *types.File, where string) error {
-	newFile, err := os.Create(where + "/" + "_" + f.Name + "." + f.Extension)
+	newFile, err := os.Create(where + f.Name)
 	defer func() {
 		err := newFile.Close()
 		if err != nil {
@@ -102,7 +106,7 @@ func (ds *DataServer) saveFile(f *types.File, where string) error {
 		return err
 	}
 
-	_, err = newFile.Write(f.Bytes)
+	_, err = newFile.Write(f.Data)
 	if err != nil {
 		return err
 	}
